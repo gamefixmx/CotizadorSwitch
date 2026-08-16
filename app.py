@@ -133,7 +133,7 @@ if st.sidebar.button("📲 Enviar Pedido por WhatsApp", type="primary", use_cont
         mensaje += "¿Me proporcionas el link de pago de Mercado Pago o los datos de depósito?"
         
         # NUMERO DE WHATSAPP DEL TALLER (Cambiar aquí)
-        numero_whatsapp = "529980000000" # Formato internacional sin símbolo +, ej. 52 para México
+        numero_whatsapp = "529845208305" # Formato internacional sin símbolo +, ej. 52 para México
         
         # Crear URL codificada
         url_whatsapp = f"https://wa.me/{numero_whatsapp}?text={urllib.parse.quote(mensaje)}"
