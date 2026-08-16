@@ -20,7 +20,7 @@ CAPACIDAD_PROPIA = 500.0   # Un límite alto si traen su propia memoria
 # ------------------------------------------------------------------------
 
 # 2. Barra Lateral (Sidebar) para Opciones de Memoria y Resumen
-st.sidebar.image("https://cdn-icons-png.flaticon.com/512/5260/5260498.png", width=100) # Logo genérico temporal
+st.sidebar.image("logo.png", use_container_width=True)
 st.sidebar.header("1. Opciones de Memoria")
 
 opcion_memoria = st.sidebar.radio(
