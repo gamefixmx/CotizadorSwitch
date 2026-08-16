@@ -39,15 +39,24 @@ else:
     costo_base = PRECIO_256GB
     capacidad_max = CAPACIDAD_256
 
-# 3. Cargar la base de datos de juegos (El archivo CSV)
-@st.cache_data
+# 3. Cargar la base de datos de juegos desde Google Sheets
+@st.cache_data(ttl=60) # ttl=60 significa que actualizará los datos cada 60 segundos si hay cambios
 def cargar_juegos():
+    # --- REEMPLAZA ESTO CON EL ID DE TU GOOGLE SHEET ---
+    SHEET_ID = '1NVQeuswZ0odOah7wrFMENsdx-uSYU7BhsVjnmFLQnpI' 
+    # ---------------------------------------------------
+    
+    # URL especial de Google Sheets para exportar a CSV
+    url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv"
+    
     try:
-        # Lee el archivo CSV separando por comas
-        df = pd.read_csv("juegos.csv")
+        # Pandas puede leer directamente un CSV desde una URL
+        df = pd.read_csv(url)
+        # Limpiar los datos en caso de que haya filas vacías al final de la hoja
+        df.dropna(subset=['Nombre'], inplace=True) 
         return df
-    except FileNotFoundError:
-        st.error("No se encontró el archivo juegos.csv")
+    except Exception as e:
+        st.error(f"Error al cargar la base de datos: {e}")
         return pd.DataFrame()
 
 df_juegos = cargar_juegos()
