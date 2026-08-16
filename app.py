@@ -9,10 +9,10 @@ st.title("🎮 Gamefix - Instalación de Juegos Nintendo Switch")
 st.markdown("Elige tu memoria y selecciona los juegos que deseas instalar. ¡Nosotros hacemos el resto!")
 
 # --- VARIABLES DE PRECIOS Y CAPACIDADES (Puedes editar esto después) ---
-PRECIO_SIN_MEMORIA = 300   # Costo solo por el servicio de instalación
-PRECIO_128GB = 600         # Costo servicio + memoria 128GB
-PRECIO_256GB = 1000        # Costo servicio + memoria 256GB
-COSTO_JUEGO_EXTRA = 50     # Costo por cada juego extra a partir del número 11
+PRECIO_SIN_MEMORIA = 1200   # Costo solo por el servicio de instalación
+PRECIO_128GB = 1500         # Costo servicio + memoria 128GB
+PRECIO_256GB = 2200        # Costo servicio + memoria 256GB
+COSTO_JUEGO_EXTRA = 100     # Costo por cada juego extra a partir del número 11
 
 CAPACIDAD_128 = 119.0      # Capacidad real en GB
 CAPACIDAD_256 = 238.0      # Capacidad real en GB
