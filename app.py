@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 import urllib.parse
+from PIL import Image, ImageDraw, ImageFont
+import io
 
 # 1. Configuración de la página
 st.set_page_config(page_title="Gamefix - Cotizador Switch", page_icon="🎮", layout="wide")
@@ -55,6 +57,33 @@ def cargar_juegos():
 
 df_juegos = cargar_juegos()
 
+# --- FUNCIÓN PARA GENERAR EL CARTUCHO PERSONALIZADO CON TEXTO ---
+def generar_cartucho_con_texto(nombre_juego):
+    try:
+        # Cargar la plantilla base del cartucho
+        img = Image.open("cartucho.png").convert("RGBA")
+        draw = ImageDraw.Draw(img)
+        
+        # Intentar cargar una fuente estándar, si no usa la por defecto
+        try:
+            font = ImageFont.truetype("arial.ttf", size=16)
+        except:
+            font = ImageFont.load_default()
+            
+        # Coordenadas aproximadas del área blanca central del cartucho
+        # Ajusta estas coordenadas según el tamaño de tu imagen cartucho.png
+        x_centro = img.width / 2
+        y_centro = 210  # Posición vertical en la zona blanca
+        
+        # Como el texto largo puede salirse, podemos dividirlo en líneas si es muy largo
+        # O centrarlo directamente:
+        draw.text((x_centro, y_centro), nombre_juego, fill=(20, 20, 20, 255), font=font, anchor="mm", align="center")
+        
+        return img
+    except Exception:
+        # Si algo falla con la imagen base, regresa un valor nulo
+        return None
+
 # 4. Mostrar Catálogo de Juegos
 st.header("2. Catálogo de Juegos")
 st.info("💡 **Nota:** Los primeros 10 juegos están incluidos en el costo base. A partir del 11avo juego, se sumarán $" + str(COSTO_JUEGO_EXTRA) + " por cada uno.")
@@ -68,27 +97,35 @@ if not df_juegos.empty:
     for index, row in df_juegos.iterrows():
         with cols[index % 4]:
             with st.container(border=True):
-                # Manejo de portadas con tu nuevo cartucho.png como respaldo si está vacía
                 url_portada = row.get('URL_Portada', '')
-                if pd.notna(url_portada) and str(url_portada).strip() != "":
-                    imagen_a_mostrar = str(url_portada).strip()
-                else:
-                    imagen_a_mostrar = "cartucho.png"
+                nombre_juego = row['Nombre']
                 
-                try:
-                    st.image(imagen_a_mostrar, use_container_width=True)
-                except:
-                    st.image("cartucho.png", use_container_width=True)
+                # Manejo de portadas: Si hay URL válida, se muestra; si no, generamos el cartucho con su nombre
+                if pd.notna(url_portada) and str(url_portada).strip() != "":
+                    try:
+                        st.image(str(url_portada).strip(), use_container_width=True)
+                    except:
+                        cartucho_generado = generar_cartucho_con_texto(nombre_juego)
+                        if cartucho_generado:
+                            st.image(cartucho_generado, use_container_width=True)
+                        else:
+                            st.image("cartucho.png", use_container_width=True)
+                else:
+                    cartucho_generado = generar_cartucho_con_texto(nombre_juego)
+                    if cartucho_generado:
+                        st.image(cartucho_generado, use_container_width=True)
+                    else:
+                        st.image("cartucho.png", use_container_width=True)
                 
                 # Información del juego
-                st.markdown(f"**{row['Nombre']}**")
+                st.markdown(f"**{nombre_juego}**")
                 st.caption(f"📦 Peso: {row['Peso_GB']} GB")
                 if str(row['Incluye_DLC']).strip().lower() == 'si':
                     st.caption("✨ Incluye DLC")
                 
                 # Checkbox para seleccionar
                 if st.checkbox("Agregar al carrito", key=f"juego_{index}"):
-                    juegos_seleccionados.append(row['Nombre'])
+                    juegos_seleccionados.append(nombre_juego)
                     espacio_usado += float(row['Peso_GB'])
 
 # 5. Lógica de Precios y Barra de Progreso en la Sidebar
