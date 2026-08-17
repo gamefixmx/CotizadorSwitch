@@ -68,17 +68,17 @@ if not df_juegos.empty:
     for index, row in df_juegos.iterrows():
         with cols[index % 4]:
             with st.container(border=True):
-                # Manejo de portadas con imagen de respaldo si está vacía
+                # Manejo de portadas con tu nuevo cartucho.png como respaldo si está vacía
                 url_portada = row.get('URL_Portada', '')
                 if pd.notna(url_portada) and str(url_portada).strip() != "":
                     imagen_a_mostrar = str(url_portada).strip()
                 else:
-                    imagen_a_mostrar = "https://cdn-icons-png.flaticon.com/512/5260/5260498.png"
+                    imagen_a_mostrar = "cartucho.png"
                 
                 try:
                     st.image(imagen_a_mostrar, use_container_width=True)
                 except:
-                    st.image("https://cdn-icons-png.flaticon.com/512/5260/5260498.png", use_container_width=True)
+                    st.image("cartucho.png", use_container_width=True)
                 
                 # Información del juego
                 st.markdown(f"**{row['Nombre']}**")
