@@ -118,21 +118,18 @@ if not df_juegos.empty:
                 url_portada = row.get('URL_Portada', '')
                 nombre_juego = str(row['Nombre'])
                 
-                # Renderizar portada Tinfoil con el cartucho encima, o solo cartucho con texto
+# Renderizar portada Tinfoil con el cartucho encima, o solo cartucho con texto
                 if pd.notna(url_portada) and str(url_portada).strip() != "":
-                    # EFECTO SÁNDWICH: Portada atrás, marco de cartucho al frente
-                    st.markdown(f"""
-                    <div style="position: relative; width: 100%; aspect-ratio: 351/508; margin: auto; margin-bottom: 8px;">
-                        <!-- CAPA 1 (Fondo): La portada cuadrada extraída -->
-                        <img src="{str(url_portada).strip()}" style="position: absolute; left: 7.6%; top: 26.5%; width: 84.7%; height: 59%; object-fit: cover; border-radius: 4px; z-index: 1;">
-                        
-                        <!-- CAPA 2 (Frente): Marco de plástico (Reutiliza el CSS rápido) -->
-                        <div class="cartucho-card" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 2; margin-bottom: 0;"></div>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    # EFECTO SÁNDWICH (Sin espacios a la izquierda para evitar que Streamlit lo vuelva texto)
+                    html_portada = f"""<div style="position: relative; width: 100%; aspect-ratio: 351/508; margin: auto; margin-bottom: 8px;">
+<img src="{str(url_portada).strip()}" style="position: absolute; left: 7.6%; top: 26.5%; width: 84.7%; height: 59%; object-fit: cover; border-radius: 4px; z-index: 1;">
+<div class="cartucho-card" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 2; margin-bottom: 0;"></div>
+</div>"""
+                    st.markdown(html_portada, unsafe_allow_html=True)
                 else:
                     # SIN URL: Muestra el cartucho genérico con el nombre escrito
-                    st.markdown(f'<div class="cartucho-card"><div class="cartucho-texto">{nombre_juego}</div></div>', unsafe_allow_html=True)
+                    html_vacio = f"""<div class="cartucho-card" style="margin-bottom: 8px;"><div class="cartucho-texto">{nombre_juego}</div></div>"""
+                    st.markdown(html_vacio, unsafe_allow_html=True)
                 
                 st.markdown(f"**{nombre_juego}**")
                 st.caption(f"📦 Peso: {row['Peso_GB']} GB")
