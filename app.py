@@ -39,7 +39,7 @@ else:
     costo_base = PRECIO_256GB
     capacidad_max = CAPACIDAD_256
 
-# 3. Cargar Base de Datos
+# 3. Cargar Base de Datos desde Google Sheets
 @st.cache_data(ttl=60)
 def cargar_juegos():
     SHEET_ID = '1NVQeuswZ0odOah7wrFMENsdx-uSYU7BhsVjnmFLQnpI'
@@ -54,58 +54,78 @@ def cargar_juegos():
 
 df_juegos = cargar_juegos()
 
-# --- NUEVO: Cargar el cartucho una sola vez súper rápido ---
+# 4. Inyección CSS Global (Carga la imagen una sola vez para los 436 juegos)
 @st.cache_data
-def obtener_cartucho_base64():
+def cargar_css_cartucho():
     try:
-        with open("cartucho.png", "rb") as img_file:
-            return base64.b64encode(img_file.read()).decode()
+        with open("cartucho.png", "rb") as f:
+            b64 = base64.b64encode(f.read()).decode()
+            return f"""
+            <style>
+            .cartucho-card {{
+                background-image: url('data:image/png;base64,{b64}');
+                background-size: contain;
+                background-repeat: no-repeat;
+                background-position: center;
+                width: 100%;
+                aspect-ratio: 351 / 508;
+                position: relative;
+                margin-bottom: 8px;
+            }}
+            .cartucho-texto {{
+                position: absolute;
+                top: 42%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                width: 80%;
+                text-align: center;
+                font-family: 'Arial Black', Impact, sans-serif;
+                font-size: 11px;
+                color: #111111;
+                line-height: 1.15;
+                word-wrap: break-word;
+            }}
+            </style>
+            """
     except:
         return ""
 
-cartucho_b64 = obtener_cartucho_base64()
-# -----------------------------------------------------------
+css_cartucho = cargar_css_cartucho()
+if css_cartucho:
+    st.markdown(css_cartucho, unsafe_allow_html=True)
 
-# 4. Mostrar Catálogo de Juegos
+# 5. Mostrar Catálogo de Juegos con Buscador Integrado
 st.header("2. Catálogo de Juegos")
 st.info(f"💡 **Nota:** Los primeros 10 juegos están incluidos en el costo base. A partir del 11avo juego, se sumarán ${COSTO_JUEGO_EXTRA} por cada uno.")
+
+# Buscador para agilizar la experiencia con 400+ juegos
+busqueda = st.text_input("🔍 Buscar juego por nombre:", "").strip().lower()
 
 juegos_seleccionados = []
 espacio_usado = 0.0
 
 if not df_juegos.empty:
+    # Filtrar según la búsqueda
+    if busqueda:
+        df_filtrado = df_juegos[df_juegos['Nombre'].astype(str).str.lower().str.contains(busqueda)]
+    else:
+        df_filtrado = df_juegos
+
     cols = st.columns(4)
-    for index, row in df_juegos.iterrows():
+    for index, row in df_filtrado.iterrows():
         with cols[index % 4]:
             with st.container(border=True):
                 url_portada = row.get('URL_Portada', '')
-                nombre_juego = row['Nombre']
+                nombre_juego = str(row['Nombre'])
                 
-                # Mostrar portada si existe, si no, usar HTML ultra rápido para el cartucho
+                # Renderizar portada oficial o cartucho CSS ultra liviano
                 if pd.notna(url_portada) and str(url_portada).strip() != "":
                     try:
                         st.image(str(url_portada).strip(), use_container_width=True)
                     except:
-                        # Si el link falla, mostramos el cartucho HTML
-                        if cartucho_b64:
-                            st.markdown(f"""
-                            <div style="position: relative; width: 100%; margin: auto;">
-                                <img src="data:image/png;base64,{cartucho_b64}" style="width: 100%; border-radius: 8px;">
-                                <div style="position: absolute; top: 43%; left: 50%; transform: translate(-50%, -50%); width: 85%; text-align: center; font-family: 'Arial Black', Impact, sans-serif; font-size: 13px; color: #111; line-height: 1.1; word-wrap: break-word;">
-                                    {nombre_juego}
-                                </div>
-                            </div>
-                            """, unsafe_allow_html=True)
+                        st.markdown(f'<div class="cartucho-card"><div class="cartucho-texto">{nombre_juego}</div></div>', unsafe_allow_html=True)
                 else:
-                    if cartucho_b64:
-                        st.markdown(f"""
-                        <div style="position: relative; width: 100%; margin: auto;">
-                            <img src="data:image/png;base64,{cartucho_b64}" style="width: 100%; border-radius: 8px;">
-                            <div style="position: absolute; top: 43%; left: 50%; transform: translate(-50%, -50%); width: 85%; text-align: center; font-family: 'Arial Black', Impact, sans-serif; font-size: 13px; color: #111; line-height: 1.1; word-wrap: break-word;">
-                                {nombre_juego}
-                            </div>
-                        </div>
-                        """, unsafe_allow_html=True)
+                    st.markdown(f'<div class="cartucho-card"><div class="cartucho-texto">{nombre_juego}</div></div>', unsafe_allow_html=True)
                 
                 st.markdown(f"**{nombre_juego}**")
                 st.caption(f"📦 Peso: {row['Peso_GB']} GB")
@@ -116,7 +136,7 @@ if not df_juegos.empty:
                     juegos_seleccionados.append(nombre_juego)
                     espacio_usado += float(row['Peso_GB'])
 
-# 5. Resumen Sidebar
+# 6. Resumen de Espacio y Precios en Sidebar
 st.sidebar.divider()
 st.sidebar.header("2. Resumen de Espacio")
 
@@ -140,7 +160,7 @@ if juegos_extra > 0:
 
 st.sidebar.subheader(f"💵 Total: ${costo_total} MXN")
 
-# 6. Checkout WhatsApp
+# 7. Checkout por WhatsApp
 st.sidebar.divider()
 st.sidebar.markdown("### ¿Todo listo?")
 
