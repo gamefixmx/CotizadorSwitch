@@ -42,6 +42,11 @@ POR_TANDA = 60
 # Ancho al que se piden los iconos (px). 200 se ve bien y pesa ~11 KB.
 ANCHO_ICONO = 200
 
+# Largo maximo del enlace de WhatsApp. Pasado eso, la lista de juegos se
+# recorta: hay telefonos que truncan las URLs muy largas. 15000 alcanza para
+# unos 140 juegos, muy por encima de un pedido normal.
+LARGO_MAXIMO_URL = 15000
+
 OPCIONES_MEMORIA = {
     "Traigo mi SD": (PRECIO_SIN_MEMORIA, CAPACIDAD_PROPIA, "Sin memoria (Traigo mi propia SD)"),
     "128 GB": (PRECIO_128GB, CAPACIDAD_128, "Comprar Memoria 128 GB"),
@@ -77,23 +82,32 @@ def leer_imagen(ruta):
 CARTUCHO_B64 = leer_imagen("cartucho.png")
 
 
-def color_de_fondo():
-    """El color de fondo real que ve el cliente.
+def fondo_de_la_barra():
+    """CSS del fondo de la barra fija.
 
-    La barra fija tiene que taparlo todo al hacer scroll, asi que necesita un
-    fondo solido. Streamlit no expone una variable CSS con ese color, pero si
-    dice que tema esta usando el visitante.
+    La barra tiene que tapar lo que pasa por debajo al hacer scroll, o sea que
+    necesita un color solido, y ese color depende del tema del visitante.
+
+    Calcularlo en Python falla si el cliente cambia su telefono a modo oscuro
+    con la pagina abierta: el CSS ya se envio y se queda del color viejo. Por
+    eso se usa light-dark(), que resuelve el color en el navegador siguiendo el
+    color-scheme que Streamlit pone en el contenedor. La primera linea es el
+    respaldo para navegadores viejos que no conocen light-dark().
     """
     propio = st.get_option("theme.backgroundColor")
-    if propio:
-        return propio
+    if propio:                      # tema fijo en .streamlit/config.toml
+        return "background: %s;" % propio
+
     try:
-        return "#FFFFFF" if st.context.theme.type == "light" else "#0E1117"
+        respaldo = "#FFFFFF" if st.context.theme.type == "light" else "#0E1117"
     except Exception:
-        return "#0E1117"
+        respaldo = "#0E1117"
+
+    return ("background: %s;\n      background: light-dark(#FFFFFF, #0E1117);"
+            % respaldo)
 
 
-FONDO_APP = color_de_fondo()
+FONDO_BARRA = fondo_de_la_barra()
 
 if CARTUCHO_B64:
     # Diseno original: la portada abajo y el PNG del cartucho encima, para que
@@ -102,14 +116,19 @@ if CARTUCHO_B64:
   .cartucho {
       width: 100%; aspect-ratio: 351/508; position: relative; margin-bottom: 6px;
   }
+  /* La ventana del cartucho mide 300x300 px dentro de un PNG de 351x508,
+     o sea left 7.41% / top 26.38% / 86.04% x 59.25%. La portada se dibuja un
+     pelo mas grande para que se meta por debajo del marco: asi no queda una
+     franja del fondo asomando (en tema claro se veia blanca). El marco va
+     encima, con lo cual ese sobrante no se ve. */
   .cartucho .portada {
-      position: absolute; left: 7.6%; top: 26.5%; width: 85%; height: 59%;
-      object-fit: cover; border-radius: 4px; z-index: 1;
+      position: absolute; left: 6.9%; top: 25.7%; width: 87.2%; height: 60.6%;
+      object-fit: cover; z-index: 1;
   }
   .cartucho .marco {
       position: absolute; inset: 0; z-index: 2;
       background-image: url('data:image/png;base64,__B64__');
-      background-size: contain; background-repeat: no-repeat; background-position: center;
+      background-size: 100% 100%; background-repeat: no-repeat;
   }
   .cartucho .titulo {
       position: absolute; top: 42%; left: 50%; transform: translate(-50%,-50%);
@@ -145,7 +164,7 @@ st.markdown("""
       position: sticky;
       top: 0;
       z-index: 999;
-      background: %(fondo)s;
+      %(fondo)s
       padding-top: 8px;
       border-bottom: 1px solid rgba(140,140,160,.35);
       box-shadow: 0 8px 16px -12px rgba(0,0,0,.75);
@@ -188,7 +207,7 @@ st.markdown("""
   div[data-testid="stCheckbox"] label { font-size: 12px !important; gap: 4px !important; }
   div[data-testid="stCheckbox"] { margin-bottom: 2px; }
 </style>
-""" % {"tarjeta": CSS_TARJETA, "fondo": FONDO_APP}, unsafe_allow_html=True)
+""" % {"tarjeta": CSS_TARJETA, "fondo": FONDO_BARRA}, unsafe_allow_html=True)
 
 
 # ---------------------------------------------------------------------------
@@ -260,23 +279,42 @@ costo_total = costo_base + juegos_extra * COSTO_JUEGO_EXTRA
 sin_espacio = espacio_usado > capacidad_max
 
 
-def armar_mensaje():
-    nombres = seleccion["Nombre"].tolist()
-    if len(nombres) > 60:
-        lista = ", ".join(nombres[:60]) + " y %d mas" % (len(nombres) - 60)
-    else:
-        lista = ", ".join(nombres)
+def armar_mensaje(limite=None):
+    """El pedido, con los juegos en lista numerada (uno por renglon)."""
+    juegos = list(zip(seleccion["Nombre"].tolist(), seleccion["Peso_GB"].tolist()))
+    recortados = juegos[:limite] if limite else juegos
+
+    renglones = ["%d. %s (%.2f GB)" % (i, nombre, peso)
+                 for i, (nombre, peso) in enumerate(recortados, start=1)]
+    if limite and len(juegos) > limite:
+        renglones.append("...y %d juegos mas" % (len(juegos) - limite))
+    lista = "\n".join(renglones)
+
     m = "¡Hola Gamefix! 👋 Quiero agendar una instalacion de Nintendo Switch.\n\n"
     m += "📦 *Opcion elegida:* %s\n" % memoria_larga
     m += "💾 *Espacio ocupado:* %.1f GB\n" % espacio_usado
-    m += "🎮 *Juegos seleccionados (%d):* %s\n\n" % (n_juegos, lista)
     m += "💵 *Costo total cotizado:* $%d MXN\n\n" % costo_total
+    m += "🎮 *Juegos seleccionados (%d):*\n%s\n\n" % (n_juegos, lista)
     m += "¿Me proporcionas el link de pago de Mercado Pago o los datos de deposito?"
     return m
 
 
-url_whatsapp = "https://wa.me/%s?text=%s" % (
-    NUMERO_WHATSAPP, urllib.parse.quote(armar_mensaje()))
+def url_de_whatsapp():
+    """Enlace con el pedido ya escrito.
+
+    Una lista larga puede generar una URL enorme y algunos telefonos la cortan,
+    asi que si se pasa del limite se recorta la lista por pasos.
+    """
+    url = ""
+    for limite in (None, 80, 50, 30):
+        url = "https://wa.me/%s?text=%s" % (
+            NUMERO_WHATSAPP, urllib.parse.quote(armar_mensaje(limite)))
+        if len(url) <= LARGO_MAXIMO_URL:
+            break
+    return url
+
+
+url_whatsapp = url_de_whatsapp()
 
 
 # ---------------------------------------------------------------------------
