@@ -122,7 +122,7 @@ if not df_juegos.empty:
                 if pd.notna(url_portada) and str(url_portada).strip() != "":
                     # EFECTO SÁNDWICH (Sin espacios a la izquierda para evitar que Streamlit lo vuelva texto)
                     html_portada = f"""<div style="position: relative; width: 100%; aspect-ratio: 351/508; margin: auto; margin-bottom: 8px;">
-<img src="{str(url_portada).strip()}" style="position: absolute; left: 7.6%; top: 26.5%; width: 85%; height: 59%; object-fit: cover; border-radius: 4px; z-index: 1;">
+<img src="{str(url_portada).strip()}" style="position: absolute; left: 7.9%; top: 26.5%; width: 85%; height: 59%; object-fit: cover; border-radius: 4px; z-index: 1;">
 <div class="cartucho-card" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 2; margin-bottom: 0;"></div>
 </div>"""
                     st.markdown(html_portada, unsafe_allow_html=True)
