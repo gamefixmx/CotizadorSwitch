@@ -1,189 +1,411 @@
-import streamlit as st
-import pandas as pd
-import urllib.parse
+# -*- coding: utf-8 -*-
+"""
+Gamefix - Cotizador de instalacion de juegos para Nintendo Switch.
+
+Version pensada para celular:
+  * El resumen (memoria, espacio, total y boton de WhatsApp) va fijo arriba,
+    siempre visible mientras se eligen juegos. Ya no hay barra lateral.
+  * 3 cartuchos por fila tambien en el telefono.
+  * Los iconos se piden en miniatura (~11 KB en vez de ~750 KB) y solo se
+    descargan los que entran en pantalla.
+  * Un solo toque para enviar el pedido por WhatsApp.
+"""
+
 import base64
+import os
+import urllib.parse
 
-# 1. Configuración de la página
-st.set_page_config(page_title="Gamefix - Cotizador Switch", page_icon="🎮", layout="wide")
+import pandas as pd
+import streamlit as st
 
-st.title("🎮 Gamefix - Instalación de Juegos Nintendo Switch")
-st.markdown("Elige tu memoria y selecciona los juegos que deseas instalar. ¡Nosotros hacemos el resto!")
+# ---------------------------------------------------------------------------
+# CONFIGURACION DEL NEGOCIO
+# ---------------------------------------------------------------------------
 
-# --- VARIABLES DE PRECIOS Y CAPACIDADES ---
 PRECIO_SIN_MEMORIA = 1200
 PRECIO_128GB = 1500
 PRECIO_256GB = 2200
 COSTO_JUEGO_EXTRA = 100
+JUEGOS_INCLUIDOS = 10
 
 CAPACIDAD_128 = 119.0
 CAPACIDAD_256 = 238.0
 CAPACIDAD_PROPIA = 500.0
-# ------------------------------------------------------------------------
 
-# 2. Barra Lateral (Sidebar)
-st.sidebar.image("logo.png", use_container_width=True)
-st.sidebar.header("1. Opciones de Memoria")
+NUMERO_WHATSAPP = "529845208305"
 
-opcion_memoria = st.sidebar.radio(
-    "Selecciona el almacenamiento:",
-    ["Sin memoria (Traigo mi propia SD)", "Comprar Memoria 128 GB", "Comprar Memoria 256 GB"]
-)
+SHEET_ID = "1NVQeuswZ0odOah7wrFMENsdx-uSYU7BhsVjnmFLQnpI"
 
-if opcion_memoria == "Sin memoria (Traigo mi propia SD)":
-    costo_base = PRECIO_SIN_MEMORIA
-    capacidad_max = CAPACIDAD_PROPIA
-elif opcion_memoria == "Comprar Memoria 128 GB":
-    costo_base = PRECIO_128GB
-    capacidad_max = CAPACIDAD_128
+# Cuantos juegos se dibujan de golpe. Menos = carga mas rapido.
+POR_TANDA = 60
+
+# Ancho al que se piden los iconos (px). 200 se ve bien y pesa ~11 KB.
+ANCHO_ICONO = 200
+
+OPCIONES_MEMORIA = {
+    "Traigo mi SD": (PRECIO_SIN_MEMORIA, CAPACIDAD_PROPIA, "Sin memoria (Traigo mi propia SD)"),
+    "128 GB": (PRECIO_128GB, CAPACIDAD_128, "Comprar Memoria 128 GB"),
+    "256 GB": (PRECIO_256GB, CAPACIDAD_256, "Comprar Memoria 256 GB"),
+}
+
+st.set_page_config(page_title="Gamefix - Cotizador Switch", page_icon="🎮",
+                   layout="centered", initial_sidebar_state="collapsed")
+
+
+# ---------------------------------------------------------------------------
+# ESTILOS
+# ---------------------------------------------------------------------------
+
+@st.cache_data
+def imagen_base64(ruta, _marca_de_tiempo):
+    """Lee una imagen y la deja lista para incrustar en el CSS.
+
+    La marca de tiempo entra en la clave del cache: si cambias cartucho.png,
+    la app toma el nuevo sin tener que reiniciarla.
+    """
+    if not os.path.exists(ruta):
+        return ""
+    with open(ruta, "rb") as f:
+        return base64.b64encode(f.read()).decode()
+
+
+def leer_imagen(ruta):
+    marca = os.path.getmtime(ruta) if os.path.exists(ruta) else 0
+    return imagen_base64(ruta, marca)
+
+
+CARTUCHO_B64 = leer_imagen("cartucho.png")
+
+
+def color_de_fondo():
+    """El color de fondo real que ve el cliente.
+
+    La barra fija tiene que taparlo todo al hacer scroll, asi que necesita un
+    fondo solido. Streamlit no expone una variable CSS con ese color, pero si
+    dice que tema esta usando el visitante.
+    """
+    propio = st.get_option("theme.backgroundColor")
+    if propio:
+        return propio
+    try:
+        return "#FFFFFF" if st.context.theme.type == "light" else "#0E1117"
+    except Exception:
+        return "#0E1117"
+
+
+FONDO_APP = color_de_fondo()
+
+if CARTUCHO_B64:
+    # Diseno original: la portada abajo y el PNG del cartucho encima, para que
+    # el marco del cartucho le quede por delante a la imagen.
+    CSS_TARJETA = """
+  .cartucho {
+      width: 100%; aspect-ratio: 351/508; position: relative; margin-bottom: 6px;
+  }
+  .cartucho .portada {
+      position: absolute; left: 7.6%; top: 26.5%; width: 85%; height: 59%;
+      object-fit: cover; border-radius: 4px; z-index: 1;
+  }
+  .cartucho .marco {
+      position: absolute; inset: 0; z-index: 2;
+      background-image: url('data:image/png;base64,__B64__');
+      background-size: contain; background-repeat: no-repeat; background-position: center;
+  }
+  .cartucho .titulo {
+      position: absolute; top: 42%; left: 50%; transform: translate(-50%,-50%);
+      width: 80%; text-align: center; font-family: 'Arial Black', Impact, sans-serif;
+      font-size: 10px; color: #111; line-height: 1.15; word-wrap: break-word;
+      z-index: 3;
+  }
+""".replace("__B64__", CARTUCHO_B64)
 else:
-    costo_base = PRECIO_256GB
-    capacidad_max = CAPACIDAD_256
+    # Sin cartucho.png al lado: portada sola, cuadrada. Se ve limpio igual.
+    CSS_TARJETA = """
+  .cartucho {
+      width: 100%; aspect-ratio: 1/1; position: relative; margin-bottom: 6px;
+      border-radius: 8px; overflow: hidden;
+      background: linear-gradient(180deg,#3a3f52 0%,#2b2f3d 100%);
+  }
+  .cartucho .portada { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .cartucho .marco { display: none; }
+  .cartucho .titulo {
+      position: absolute; inset: 0; display: flex; align-items: center;
+      justify-content: center; text-align: center; padding: 8px;
+      font-weight: 800; font-size: 11px; color: #e8eaf2; line-height: 1.2;
+  }
+"""
 
-# 3. Cargar Base de Datos desde Google Sheets
-@st.cache_data(ttl=60)
+st.markdown("""
+<style>
+  /* ---------- barra fija de resumen ----------
+     El sticky tiene que ir en el DIV PADRE del contenedor: si se pone en el
+     contenedor mismo, su padre mide lo mismo que el y no hay por donde
+     deslizarse. Por eso el :has(). */
+  div[data-testid="stVerticalBlock"] > div:has(> div[class*="st-key-barra_fija"]) {
+      position: sticky;
+      top: 0;
+      z-index: 999;
+      background: %(fondo)s;
+      padding-top: 8px;
+      border-bottom: 1px solid rgba(140,140,160,.35);
+      box-shadow: 0 8px 16px -12px rgba(0,0,0,.75);
+  }
+  div[class*="st-key-barra_fija"] { gap: 6px; padding-bottom: 8px; }
+
+  /* La barra de Streamlit taparia el resumen: esta pagina es para clientes. */
+  header[data-testid="stHeader"] { display: none; }
+
+  .resumen {
+      display: flex; justify-content: space-between; align-items: baseline;
+      font-size: 14px; margin: 2px 0 4px;
+  }
+  .resumen .total { font-size: 19px; font-weight: 800; }
+  .resumen .lleno { color: #ff5f56; font-weight: 700; }
+
+  /* ---------- 3 columnas tambien en celular ---------- */
+  @media (max-width: 640px) {
+      section[data-testid="stMain"] .stMainBlockContainer { padding: 12px 10px 60px; }
+      div[data-testid="stHorizontalBlock"] {
+          flex-wrap: nowrap !important;
+          gap: 8px !important;
+      }
+      div[data-testid="stColumn"] {
+          min-width: 0 !important;
+          width: auto !important;
+          flex: 1 1 0 !important;
+      }
+  }
+
+  /* ---------- tarjeta de juego ---------- */
+%(tarjeta)s
+  .nombre-juego {
+      font-size: 12px; font-weight: 700; line-height: 1.25;
+      margin: 0 0 2px; overflow-wrap: anywhere;
+  }
+  .peso-juego { font-size: 11px; opacity: .7; margin-bottom: 4px; }
+
+  /* checkbox mas compacto y legible en celular */
+  div[data-testid="stCheckbox"] label { font-size: 12px !important; gap: 4px !important; }
+  div[data-testid="stCheckbox"] { margin-bottom: 2px; }
+</style>
+""" % {"tarjeta": CSS_TARJETA, "fondo": FONDO_APP}, unsafe_allow_html=True)
+
+
+# ---------------------------------------------------------------------------
+# DATOS
+# ---------------------------------------------------------------------------
+
+@st.cache_data(ttl=300)
 def cargar_juegos():
-    SHEET_ID = '1NVQeuswZ0odOah7wrFMENsdx-uSYU7BhsVjnmFLQnpI'
-    url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv"
+    url = "https://docs.google.com/spreadsheets/d/%s/export?format=csv" % SHEET_ID
     try:
         df = pd.read_csv(url)
-        df.dropna(subset=['Nombre'], inplace=True) 
-        return df
-    except Exception as e:
-        st.error(f"Error al cargar la base de datos: {e}")
-        return pd.DataFrame()
+    except Exception:
+        # Respaldo: el CSV que genera unificar_catalogo.py, si esta al lado
+        local = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             "juegos_switch_unificado.csv")
+        if not os.path.exists(local):
+            return pd.DataFrame()
+        df = pd.read_csv(local)
 
-df_juegos = cargar_juegos()
+    df = df.dropna(subset=["Nombre"]).copy()
+    df["Nombre"] = df["Nombre"].astype(str).str.strip()
+    df["Peso_GB"] = pd.to_numeric(df["Peso_GB"], errors="coerce").fillna(0.0)
+    if "URL_Portada" not in df.columns:
+        df["URL_Portada"] = ""
+    df["URL_Portada"] = df["URL_Portada"].fillna("").astype(str).str.strip()
+    if "Incluye_DLC" not in df.columns:
+        df["Incluye_DLC"] = ""
+    df["Incluye_DLC"] = df["Incluye_DLC"].fillna("").astype(str).str.strip()
+    df["clave"] = ["j%d" % i for i in range(len(df))]
+    return df.reset_index(drop=True)
 
-# 4. Inyección CSS Global (Carga la imagen una sola vez para los 436 juegos)
-@st.cache_data
-def cargar_css_cartucho():
-    try:
-        with open("cartucho.png", "rb") as f:
-            b64 = base64.b64encode(f.read()).decode()
-            return f"""
-            <style>
-            .cartucho-card {{
-                background-image: url('data:image/png;base64,{b64}');
-                background-size: contain;
-                background-repeat: no-repeat;
-                background-position: center;
-                width: 100%;
-                aspect-ratio: 351 / 508;
-                position: relative;
-                margin-bottom: 8px;
-            }}
-            .cartucho-texto {{
-                position: absolute;
-                top: 42%;
-                left: 50%;
-                transform: translate(-50%, -50%);
-                width: 80%;
-                text-align: center;
-                font-family: 'Arial Black', Impact, sans-serif;
-                font-size: 11px;
-                color: #111111;
-                line-height: 1.15;
-                word-wrap: break-word;
-            }}
-            </style>
-            """
-    except:
+
+def miniatura(url):
+    """Pide el icono en chico a un redimensionador publico.
+
+    El CDN de Nintendo no acepta parametros de tamano y sirve JPG de ~750 KB.
+    wsrv.nl devuelve el mismo icono en WebP de ~11 KB. Si el servicio fallara,
+    el onerror de la etiqueta <img> vuelve a la imagen original.
+    """
+    if not url:
         return ""
+    return ("https://wsrv.nl/?url=%s&w=%d&h=%d&fit=cover&output=webp&q=80"
+            % (urllib.parse.quote(url, safe=""), ANCHO_ICONO, ANCHO_ICONO))
 
-css_cartucho = cargar_css_cartucho()
-if css_cartucho:
-    st.markdown(css_cartucho, unsafe_allow_html=True)
 
-# 5. Mostrar Catálogo de Juegos con Buscador Integrado
-st.header("2. Catálogo de Juegos")
-st.info(f"💡 **Nota:** Los primeros 10 juegos están incluidos en el costo base. A partir del 11avo juego, se sumarán ${COSTO_JUEGO_EXTRA} por cada uno.")
+df = cargar_juegos()
 
-# Buscador para agilizar la experiencia con 400+ juegos
-busqueda = st.text_input("🔍 Buscar juego por nombre:", "").strip().lower()
+if df.empty:
+    st.error("No pude cargar el catalogo de juegos. Revisa la conexion o la hoja de Google.")
+    st.stop()
 
-juegos_seleccionados = []
-espacio_usado = 0.0
 
-if not df_juegos.empty:
-    # Filtrar según la búsqueda
-    if busqueda:
-        df_filtrado = df_juegos[df_juegos['Nombre'].astype(str).str.lower().str.contains(busqueda)]
+# ---------------------------------------------------------------------------
+# ESTADO: que hay en el carrito ANTES de dibujar nada
+# ---------------------------------------------------------------------------
+# Streamlit vuelve a correr el script completo en cada clic, y el estado de los
+# checkboxes ya esta en session_state. Por eso podemos calcular el resumen
+# aqui arriba y dibujar la barra fija antes que el catalogo.
+
+seleccion = df[[bool(st.session_state.get("chk_" + k)) for k in df["clave"]]]
+n_juegos = len(seleccion)
+espacio_usado = float(seleccion["Peso_GB"].sum())
+
+etiqueta_memoria = st.session_state.get("memoria", "Traigo mi SD")
+costo_base, capacidad_max, memoria_larga = OPCIONES_MEMORIA[etiqueta_memoria]
+
+juegos_extra = max(0, n_juegos - JUEGOS_INCLUIDOS)
+costo_total = costo_base + juegos_extra * COSTO_JUEGO_EXTRA
+sin_espacio = espacio_usado > capacidad_max
+
+
+def armar_mensaje():
+    nombres = seleccion["Nombre"].tolist()
+    if len(nombres) > 60:
+        lista = ", ".join(nombres[:60]) + " y %d mas" % (len(nombres) - 60)
     else:
-        df_filtrado = df_juegos
+        lista = ", ".join(nombres)
+    m = "¡Hola Gamefix! 👋 Quiero agendar una instalacion de Nintendo Switch.\n\n"
+    m += "📦 *Opcion elegida:* %s\n" % memoria_larga
+    m += "💾 *Espacio ocupado:* %.1f GB\n" % espacio_usado
+    m += "🎮 *Juegos seleccionados (%d):* %s\n\n" % (n_juegos, lista)
+    m += "💵 *Costo total cotizado:* $%d MXN\n\n" % costo_total
+    m += "¿Me proporcionas el link de pago de Mercado Pago o los datos de deposito?"
+    return m
 
-    cols = st.columns(4)
-    for index, row in df_filtrado.iterrows():
-        with cols[index % 4]:
-            with st.container(border=True):
-                url_portada = row.get('URL_Portada', '')
-                nombre_juego = str(row['Nombre'])
-                
-# Renderizar portada Tinfoil con el cartucho encima, o solo cartucho con texto
-                if pd.notna(url_portada) and str(url_portada).strip() != "":
-                    # EFECTO SÁNDWICH (Sin espacios a la izquierda para evitar que Streamlit lo vuelva texto)
-                    html_portada = f"""<div style="position: relative; width: 100%; aspect-ratio: 351/508; margin: auto; margin-bottom: 8px;">
-<img src="{str(url_portada).strip()}" style="position: absolute; left: 7.6%; top: 26.5%; width: 87%; height: 62%; object-fit: cover; border-radius: 4px; z-index: 1;">
-<div class="cartucho-card" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 2; margin-bottom: 0;"></div>
-</div>"""
-                    st.markdown(html_portada, unsafe_allow_html=True)
-                else:
-                    # SIN URL: Muestra el cartucho genérico con el nombre escrito
-                    html_vacio = f"""<div class="cartucho-card" style="margin-bottom: 8px;"><div class="cartucho-texto">{nombre_juego}</div></div>"""
-                    st.markdown(html_vacio, unsafe_allow_html=True)
-                
-                st.markdown(f"**{nombre_juego}**")
-                st.caption(f"📦 Peso: {row['Peso_GB']} GB")
-                if str(row['Incluye_DLC']).strip().lower() == 'si':
-                    st.caption("✨ Incluye DLC")
-                
-                if st.checkbox("Agregar al carrito", key=f"juego_{index}"):
-                    juegos_seleccionados.append(nombre_juego)
-                    espacio_usado += float(row['Peso_GB'])
 
-# 6. Resumen de Espacio y Precios en Sidebar
-st.sidebar.divider()
-st.sidebar.header("2. Resumen de Espacio")
+url_whatsapp = "https://wa.me/%s?text=%s" % (
+    NUMERO_WHATSAPP, urllib.parse.quote(armar_mensaje()))
 
-porcentaje_uso = min(espacio_usado / capacidad_max, 1.0) if capacidad_max > 0 else 0
 
-if espacio_usado > capacidad_max and opcion_memoria != "Sin memoria (Traigo mi propia SD)":
-    st.sidebar.error(f"⚠️ Espacio excedido. Quita algunos juegos.\nOcupas: {espacio_usado:.1f} GB de {capacidad_max} GB")
-    st.sidebar.progress(1.0)
+# ---------------------------------------------------------------------------
+# BARRA FIJA
+# ---------------------------------------------------------------------------
+
+with st.container(key="barra_fija"):
+    st.segmented_control(
+        "Memoria", list(OPCIONES_MEMORIA.keys()), key="memoria",
+        default="Traigo mi SD", label_visibility="collapsed", width="stretch",
+    )
+
+    if sin_espacio:
+        aviso = '<span class="lleno">%.1f / %.0f GB - te pasaste</span>' % (
+            espacio_usado, capacidad_max)
+    else:
+        aviso = "%.1f / %.0f GB" % (espacio_usado, capacidad_max)
+
+    st.markdown(
+        '<div class="resumen"><span>🛒 %d %s &nbsp;·&nbsp; %s</span>'
+        '<span class="total">$%d</span></div>'
+        % (n_juegos, "juego" if n_juegos == 1 else "juegos", aviso, costo_total),
+        unsafe_allow_html=True,
+    )
+    st.progress(min(espacio_usado / capacidad_max, 1.0) if capacidad_max else 0.0)
+
+    if n_juegos == 0:
+        st.button("Elige tus juegos para cotizar", disabled=True, width="stretch")
+    elif sin_espacio:
+        st.button("Quita juegos: no caben en %s" % etiqueta_memoria,
+                  disabled=True, width="stretch")
+    else:
+        st.link_button("📲 Enviar pedido por WhatsApp", url_whatsapp,
+                       type="primary", width="stretch")
+
+
+# ---------------------------------------------------------------------------
+# CARRITO
+# ---------------------------------------------------------------------------
+
+if n_juegos:
+    with st.expander("Ver mi carrito (%d)" % n_juegos):
+        for _, fila in seleccion.iterrows():
+            c1, c2 = st.columns([5, 1], vertical_alignment="center")
+            c1.write("%s  ·  %.2f GB" % (fila["Nombre"], fila["Peso_GB"]))
+            if c2.button("Quitar", key="quitar_" + fila["clave"]):
+                st.session_state["chk_" + fila["clave"]] = False
+                st.rerun()
+        if juegos_extra:
+            st.caption("Los primeros %d juegos van incluidos. Llevas %d extra "
+                       "(+$%d c/u)." % (JUEGOS_INCLUIDOS, juegos_extra, COSTO_JUEGO_EXTRA))
+        else:
+            st.caption("Te quedan %d juegos incluidos en el precio base."
+                       % (JUEGOS_INCLUIDOS - n_juegos))
+
+
+# ---------------------------------------------------------------------------
+# CATALOGO
+# ---------------------------------------------------------------------------
+
+st.caption("Los primeros %d juegos van incluidos en el precio. Del %davo en "
+           "adelante, +$%d cada uno." % (JUEGOS_INCLUIDOS, JUEGOS_INCLUIDOS + 1,
+                                         COSTO_JUEGO_EXTRA))
+
+busqueda = st.text_input("Buscar juego", "", placeholder="🔍 Buscar juego por nombre...",
+                         label_visibility="collapsed").strip().lower()
+
+if busqueda:
+    visibles = df[df["Nombre"].str.lower().str.contains(busqueda, regex=False)]
 else:
-    st.sidebar.success(f"**Espacio usado:** {espacio_usado:.1f} GB de {capacidad_max} GB")
-    st.sidebar.progress(porcentaje_uso)
+    visibles = df
 
-juegos_extra = max(0, len(juegos_seleccionados) - 10)
-costo_total = costo_base + (juegos_extra * COSTO_JUEGO_EXTRA)
+if "tanda" not in st.session_state:
+    st.session_state.tanda = POR_TANDA
 
-st.sidebar.divider()
-st.sidebar.header("3. Cotización Final")
-st.sidebar.write(f"🎮 **Juegos base (hasta 10):** {min(len(juegos_seleccionados), 10)}")
-if juegos_extra > 0:
-    st.sidebar.write(f"➕ **Juegos extra (+${COSTO_JUEGO_EXTRA}):** {juegos_extra}")
+# Al cambiar la busqueda se vuelve a empezar por la primera tanda: si no, una
+# busqueda de una sola letra dibujaria cientos de tarjetas de golpe.
+if st.session_state.get("busqueda_previa") != busqueda:
+    st.session_state.busqueda_previa = busqueda
+    st.session_state.tanda = POR_TANDA
 
-st.sidebar.subheader(f"💵 Total: ${costo_total} MXN")
+mostrar = visibles.head(st.session_state.tanda)
 
-# 7. Checkout por WhatsApp
-st.sidebar.divider()
-st.sidebar.markdown("### ¿Todo listo?")
+if visibles.empty:
+    st.info("No encontre ningun juego con ese nombre.")
 
-if st.sidebar.button("📲 Enviar Pedido por WhatsApp", type="primary", use_container_width=True):
-    if len(juegos_seleccionados) == 0:
-        st.sidebar.warning("Por favor selecciona al menos un juego.")
-    elif espacio_usado > capacidad_max and opcion_memoria != "Sin memoria (Traigo mi propia SD)":
-        st.sidebar.error("No puedes enviar el pedido, excediste la memoria.")
-    else:
-        lista_texto = ", ".join(juegos_seleccionados)
-        mensaje = f"¡Hola Gamefix! 👋 Quiero agendar una instalación de Nintendo Switch.\n\n"
-        mensaje += f"📦 *Opción elegida:* {opcion_memoria}\n"
-        mensaje += f"💾 *Espacio ocupado:* {espacio_usado:.1f} GB\n"
-        mensaje += f"🎮 *Juegos seleccionados ({len(juegos_seleccionados)}):* {lista_texto}\n\n"
-        mensaje += f"💵 *Costo Total Cotizado:* ${costo_total} MXN\n\n"
-        mensaje += "¿Me proporcionas el link de pago de Mercado Pago o los datos de depósito?"
-        
-        numero_whatsapp = "529845208305"
-        url_whatsapp = f"https://wa.me/{numero_whatsapp}?text={urllib.parse.quote(mensaje)}"
-        
-        st.sidebar.success("Haz clic en el enlace de abajo para abrir WhatsApp:")
-        st.sidebar.markdown(f"[👉 **CONFIRMAR PEDIDO AQUÍ**]({url_whatsapp})")
+COLUMNAS = 3
+filas_visibles = list(mostrar.iterrows())
+
+# Se crean columnas por cada renglon (y no tres columnas larguisimas) para que
+# las tarjetas queden alineadas aunque unos nombres ocupen dos lineas.
+for inicio in range(0, len(filas_visibles), COLUMNAS):
+    columnas = st.columns(COLUMNAS)
+
+    for columna, (_, fila) in zip(columnas, filas_visibles[inicio:inicio + COLUMNAS]):
+        with columna:
+            nombre = fila["Nombre"]
+            portada = fila["URL_Portada"]
+
+            if portada:
+                # src = miniatura ligera; si el redimensionador falla, el
+                # onerror cae a la imagen original de Nintendo.
+                html = ('<div class="cartucho">'
+                        '<img class="portada" loading="lazy" decoding="async" src="%s" '
+                        'onerror="this.onerror=null;this.src=\'%s\';" alt="">'
+                        '<div class="marco"></div>'
+                        '</div>') % (miniatura(portada), portada)
+            else:
+                html = ('<div class="cartucho"><div class="marco"></div>'
+                        '<div class="titulo">%s</div></div>') % nombre
+
+            st.markdown(html, unsafe_allow_html=True)
+            st.markdown('<div class="nombre-juego">%s</div>' % nombre,
+                        unsafe_allow_html=True)
+
+            detalle = "%.2f GB" % fila["Peso_GB"]
+            if fila["Incluye_DLC"].lower() in ("si", "sí"):
+                detalle += " · DLC"
+            st.markdown('<div class="peso-juego">%s</div>' % detalle,
+                        unsafe_allow_html=True)
+
+            marcado = bool(st.session_state.get("chk_" + fila["clave"]))
+            st.checkbox("Agregado ✓" if marcado else "Agregar",
+                        key="chk_" + fila["clave"])
+
+if len(mostrar) < len(visibles):
+    faltan = len(visibles) - len(mostrar)
+    if st.button("Ver %d juegos más" % min(POR_TANDA, faltan), width="stretch"):
+        st.session_state.tanda += POR_TANDA
+        st.rerun()
+    st.caption("Mostrando %d de %d. Usa el buscador de arriba para encontrar "
+               "uno directo." % (len(mostrar), len(visibles)))
